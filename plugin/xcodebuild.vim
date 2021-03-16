@@ -1,230 +1,215 @@
+" Modified: hujie.code@gmail.com
 " Description:	An easy way to use xcodebuild with Vim
 " Author: Jerry Marino <@jerrymarino>
 " License: Vim license
 " Version .45
 
-" Run 
-" TODO integrate simulator vim plugin https://github.com/phonegap/ios-sim
-
-" Test  
-nn <leader>u :call g:XCB_Test()<cr> 
 
 " Build current target
-nn <leader>b :call g:XCB_Build()<cr> 
+nn <leader>xb :call g:XCB_Build()<cr> 
 
 " Clean current target
-nn <leader>K :call g:XCB_Clean()<cr> 
+nn <leader>xk :call g:XCB_Clean()<cr> 
 
-" Debug 
-" TODO integrate debugging 
+" Show build command 
+nn <leader>xi :call g:XCB_BuildCommandInfo()<cr> 
 
-" Show Build Info
-nn <leader>pi :call g:XCB_BuildInfo()<cr> 
+" Generate compile_commands
+nn <leader>xc :call g:XCB_GenerateCompileCommandsIfNeeded()<cr>:CocRestart<cr>
 
-" Show Build Command 
-nn <leader>bi :call g:XCB_BuildCommandInfo()<cr> 
-
-let s:projectName = '' 
+let s:projects = []
+let s:project = '' 
 let s:targets = []
-let s:schemes = []
-let s:buildConfigs = []
-let s:sdk = ''
-let s:buildConfiguration = ''
 let s:target = ''
-let s:testTarget = ''
+let s:buildConfigs = []
+let s:buildConfig = ''
+let s:schemes = []
 let s:scheme = ''
-let s:noProjectError = ''
+let s:sdks = []
+let s:sdk = ''
+let s:noProjectError = 'Missing .xcodeproj'
+let s:xcodeproj_info_file = '.xcodeproj_info'
+
+autocmd BufWritePost .xcodeproj_info call g:XCB_UpdateXCConfig()
 
 fun s:init()
-	let s:noProjectError = "Missing .xcodeproj, "
-		\ . "run vim from your project\'s root directory."
-	call g:XCB_LoadBuildInfo()
-	if s:projectIsValid()	
-		call s:defaultInit()
-	endif
+    call g:XCB_GenerateBuildInfoIfNeeded()
+
+    if s:projectIsValid()	
+        set errorformat=
+                    \%f:%l:%c:{%*[^}]}:\ error:\ %m,
+                    \%f:%l:%c:{%*[^}]}:\ fatal\ error:\ %m,
+                    \%f:%l:%c:{%*[^}]}:\ warning:\ %m,
+                    \%f:%l:%c:\ error:\ %m,
+                    \%f:%l:%c:\ fatal\ error:\ %m,
+                    \%f:%l:%c:\ warning:\ %m,
+                    \%f:%l:\ Error:\ %m,
+                    \%f:%l:\ error:\ %m,
+                    \%f:%l:\ fatal\ error:\ %m,
+                    \%f:%l:\ warning:\ %m
+
+        call g:XCB_UpdateXCConfig()
+    endif
 endf
 
 fun s:projectIsValid()
-	if !empty(s:projectName)
-		return 1
-	endif
-	return 0
+    if !empty(s:project)
+        return 1
+    endif
+    return 0
 endf
 
-fun s:defaultInit()
-	let s:sdk = "iphonesimulator"
-	let s:buildConfiguration = "Debug"
-	let s:testTarget = "'". substitute(s:projectName, "\.\/", "", "") ."'" . "Tests"
-  let s:target = "'". substitute(s:projectName, "\.\/", "", "") ."'"
-endf
- 
-fun g:XCB_SetTarget(target)
-	if !s:targetIsValid(a:target)
-		echoerr "Invalid target, "
-			\ . " use XCB_BuildInfo() to get project info" 
-		return
-	endif
-	let s:target = a:target
-	echo a:target
-endf
+fun g:XCB_GenerateBuildInfoIfNeeded()
+    let s:project = s:findProjectFileName()
+    let has_info_file = filereadable(getcwd()."/".s:xcodeproj_info_file)
+    " No xcoderoject found and no project setting.
+    if empty(s:project) && !has_info_file
+        return 
+    endif
 
-fun s:targetIsValid(target)
-	if index(s:targets, a:target) < 0  
-		return 0
-	endif
-	return 1	
-endf 
+    " Need xcode build info.
+    if !has_info_file
+        call system("touch ".s:xcodeproj_info_file)
+    endif
 
-fun g:XCB_SetTestTarget(target)
-	if !s:targetIsValid(a:target)
-		echoerr "Invalid target, "
-			\ . " use XCB_BuildInfo() to get project info" 
-		return
-	endif
-	let s:testTarget =  a:target
-endf
+    call g:XCB_UpdateXCConfig()
 
-fun g:XCB_SetScheme(scheme)
-	if !s:schemeIsValid(a:scheme)
-		echoerr "Invalid scheme, "
-			\ . " use XCB_BuildInfo() to get project info" 
-		return
-	endif
-	let s:scheme = a:scheme
-	echo a:scheme
-endf
+    " No target found need generate.
+    if !len(s:target)
+        echom s:project
+        let outputList = split(system("xcodebuild -list -project ".s:project), '\n')
+        let configTypeEx = '\([^ :0-9"]\([a-zA-Z ]*\)\(:\)\)'
+        let typeSettingEx = '\([^ ]\w\w\+$\)'
 
-fun s:schemeIsValid(scheme)
-	if index(s:schemes, a:scheme) < 0  
-		return 0
-	endif
-	return 1	
-endf 
+        let configVarToTitleDict = {'Build Configurations:' : s:buildConfigs, 'Targets:' : s:targets, 'Schemes:' : s:schemes}
+        let configVar = []
+        for line in outputList 
+            if match(line, configTypeEx) > 1
+                let typeTitle = matchstr(line, configTypeEx)
+                if has_key(configVarToTitleDict, typeTitle)  	
+                    let configVar = get(configVarToTitleDict, typeTitle, 'default') 
+                endif
+            elseif match(line, typeSettingEx) > 1 
+                let typeSetting = matchstr(line, typeSettingEx)
+                if strlen(typeSetting) > 1
+                    call add(configVar, typeSetting)
+                endif
+            endif
+        endfor
 
-" TODO allow setting of s:sdk and validate input
+        " Default select first one, write configuration to file.
+        let s:buildConfigs[0] = '* '.s:buildConfigs[0]
+        let s:targets[0] = '* '.s:targets[0]
+        let s:schemes[0] = '* '.s:schemes[0]
 
-fun g:XCB_Test()
-	if !s:projectIsValid()	
-		echoerr s:noProjectError
-		return
-	endif
-	call g:XCB_RunBuildCommand(s:buildCommandWithTarget(s:testTarget))
+        let write_items = ['', 'SDKs:', 'iphoneos -arch arm64', 'iphonesimulator', 'macosx']
+        call extend(write_items, ['', 'Build Configurations:'])
+        call extend(write_items, s:buildConfigs)
+
+        call extend(write_items, ['', 'Targets:'])
+        call extend(write_items, s:targets)
+
+        call extend(write_items, ['', 'Schemes:'])
+        call extend(write_items, s:schemes)
+
+        call writefile(write_items, s:xcodeproj_info_file, "a")
+    endif
 endf
 
-fun s:buildCommandWithTarget(target)
-	let cmd = "xcodebuild "
-                \ . " -target " . a:target
-        if(!empty(s:sdk))
-                let cmd .= " -sdk " . s:sdk
+fun g:XCB_UpdateXCConfig()
+    let outputList = split(system("cat ".s:xcodeproj_info_file), '\n')
+
+    let configTypeEx = '[a-zA-Z ]*:'
+    let typeSettingEx = '^* .*'
+
+    let configVarToTitleDict = {'Projects:' : s:projects, 'SDKs:' : s:sdks, 'Build Configurations:' : s:buildConfigs, 'Targets:' : s:targets, 'Schemes:' : s:schemes}
+    for line in outputList 
+        if match(line, configTypeEx) == 0
+            let typeTitle = matchstr(line, configTypeEx)
+        elseif match(line, typeSettingEx) == 0 
+            let typeSetting = matchstr(line, typeSettingEx)
+            if strlen(typeSetting) > 1
+                if typeTitle == 'Projects:'
+                    let s:project = typeSetting[2:]
+                elseif typeTitle == 'SDKs:'
+                    let s:sdk = typeSetting[2:]
+                elseif typeTitle == 'Build Configurations:'
+                    let s:buildConfig  = typeSetting[2:]
+                elseif typeTitle == 'Targets:'
+                    let s:target = typeSetting[2:]
+                elseif typeTitle == 'Schemes:'
+                    let s:scheme = typeSetting[2:]
+                endif
+            endif
         endif
-        if(!empty(s:buildConfiguration))
-                let cmd .= " -configuration " . s:buildConfiguration
-        endif
-        if(!empty(s:scheme))
-                let cmd .= " -scheme " . s:scheme
-        endif
-	return cmd
+    endfor
+endf
+
+fun s:XcodeCommandWithTarget(target)
+    let cmd = "xcodebuild"
+    if(!empty(s:sdk))
+        let cmd .= " -sdk " . s:sdk
+    endif
+    if(!empty(s:buildConfig))
+        let cmd .= " -configuration " . s:buildConfig
+    endif
+    if (!empty(s:project))
+        let cmd .= " -project " . s:project
+    endif
+    if(!empty(s:scheme))
+        let cmd .= " -scheme " . s:scheme
+    endif
+    return cmd
 endf
 
 fun g:XCB_Build()
-	if !s:projectIsValid()	
-		echoerr s:noProjectError
-		return
-	endif
-	call g:XCB_RunBuildCommand(s:buildCommandWithTarget(s:target))
+    if !s:projectIsValid()	
+        echoerr s:noProjectError
+        return
+    endif
+    call g:XCB_AsyncRunBuildCommand(s:XcodeCommandWithTarget(s:target) . ' build')
 endf
 
 fun g:XCB_Clean()
-	if !s:projectIsValid()	
-		echoerr s:noProjectError
-		return
-	endif
-	let cmd = "xcodebuild "
-		\ . " clean "
-		\ . " -target " . s:target	
-	call g:XCB_RunBuildCommand(cmd)
+    if !s:projectIsValid()	
+        echoerr s:noProjectError
+        return
+    endif
+    call g:XCB_AsyncRunBuildCommand(s:XcodeCommandWithTarget(s:target) . ' clean')
 endf
 
 fun g:XCB_BuildCommandInfo()
-	if !s:projectIsValid()	
-		echoerr s:noProjectError
-		return
-	endif
-	echo s:buildCommandWithTarget(s:target)
+    if !s:projectIsValid()	
+        echoerr s:noProjectError
+        return
+    endif
+    echo s:XcodeCommandWithTarget(s:target) . ' build'
 endf	
 
-fun g:XCB_BuildInfo()
-	if empty(s:projectName)
-		echoerr s:noProjectError
-		return
-	endif
-	echo "Targets:" . join(s:targets, ' ') 
-		\ . "\tBuild Configurations:" . join(s:buildConfigs, ' ')  
-		\ . "\tSchemes:" . join(s:schemes, ' ')
-endf
-
-fun g:XCB_LoadBuildInfo()
-	let s:projectName = s:findProjectFileName()
-	if empty(s:projectName)
-		return 
-	endif
-	let outputList = split(system("xcodebuild -list"), '\n')
-	
-	let configTypeEx = '\([^ :0-9"]\([a-zA-Z ]*\)\(:\)\)'
-	let typeSettingEx = '\([^ ]\w\w\+$\)'
-	
-	let configVarToTitleDict = {'Build Configurations:' : s:buildConfigs, 'Targets:' : s:targets, 'Schemes:' : s:schemes}
-	let configVar = []
-	for line in outputList 
-		if match(line, configTypeEx) > 1
-			let typeTitle = matchstr(line, configTypeEx)
-			if has_key(configVarToTitleDict, typeTitle)  	
-				let configVar = get(configVarToTitleDict, typeTitle, 'default') 
-			endif
-		elseif match(line, typeSettingEx) > 1 
-			let typeSetting = matchstr(line, typeSettingEx)
-			if strlen(typeSetting) > 1
-				call add(configVar, typeSetting)
-			endif
-		endif
-	endfor
-endf
-
 fun s:findProjectFileName()
-	let s:projectFile = globpath(expand('.'), '*.xcodeproj')
-	return matchstr(s:projectFile, '.*\ze.xcodeproj')
+    let s:projectFile = globpath(expand('.'), '*.xcodeproj')
+    return s:projectFile
+endf
+
+fun g:XCB_GenerateCompileCommandsIfNeeded()
+    if !s:projectIsValid()	
+        return
+    endif
+    if !filereadable(getcwd()."/compile_commands.json")
+        " Clean first
+        exec "!" . s:XcodeCommandWithTarget(s:target) . ' clean'
+        let build_cmd = s:XcodeCommandWithTarget(s:target) . ' build | xcpretty -r json-compilation-database --output compile_commands.json'
+        call system(build_cmd)
+        call system('gsed -e "s/[^ ]*[gf]modules[^ ]*//g" -e "s/-index-store-path [^ ]*//g" -i compile_commands.json')
+    end
 endf
 
 fun g:XCB_RunBuildCommand(cmd)
-	" Thanks to jason @ http://vios.eraserhead.net/blog/2011/09/25/driving-kiwi-with-vim/
-	let l:BuildLog = "build/vim.log"
-	if l:bf bufname("%") != ""
-		silent write
-	endif
-	echo "Building.."
-	let l:StartTime = reltime()
-	exec "silent !" . a:cmd . " >" . l:BuildLog . " 2>&1"
-
-	" xcodebuild does NOT set exit code properly, so check the build log
-	exec "silent !grep -q '^\*\* BUILD FAILED' " . l:BuildLog
-	redraw!
-	if !v:shell_error
-		set errorformat=
-			\%f:%l:%c:{%*[^}]}:\ error:\ %m,
-			\%f:%l:%c:{%*[^}]}:\ fatal\ error:\ %m,
-			\%f:%l:%c:{%*[^}]}:\ warning:\ %m,
-			\%f:%l:%c:\ error:\ %m,
-			\%f:%l:%c:\ fatal\ error:\ %m,
-			\%f:%l:%c:\ warning:\ %m,
-			\%f:%l:\ Error:\ %m,
-			\%f:%l:\ error:\ %m,
-			\%f:%l:\ fatal\ error:\ %m,
-			\%f:%l:\ warning:\ %m
-		execute "cfile! " . l:BuildLog
-	else
-		echo "Building.. OK - " . reltimestr(reltime(l:StartTime)) . " seconds"
-	endif
+    exec "!" . a:cmd 
 endf
 
+fun g:XCB_AsyncRunBuildCommand(cmd)
+    exec "AsyncRun " . a:cmd 
+endf
 
 call s:init()
