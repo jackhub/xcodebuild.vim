@@ -79,8 +79,8 @@ fun g:XCB_GenerateBuildInfoIfNeeded()
     if !len(s:target)
         echom s:project
         let outputList = split(system("xcodebuild -list -project ".s:project), '\n')
-        let configTypeEx = '\([^ :0-9"]\([a-zA-Z ]*\)\(:\)\)'
-        let typeSettingEx = '\([^ ]\w\w\+$\)'
+        let configTypeEx = '[^ :0-9"][a-zA-Z ]*:'
+        let typeSettingEx = '[^ ]\(\w\|[-_]\)\+$'
 
         let configVarToTitleDict = {'Build Configurations:' : s:buildConfigs, 'Targets:' : s:targets, 'Schemes:' : s:schemes}
         let configVar = []
@@ -103,7 +103,7 @@ fun g:XCB_GenerateBuildInfoIfNeeded()
         let s:targets[0] = '* '.s:targets[0]
         let s:schemes[0] = '* '.s:schemes[0]
 
-        let write_items = ['', 'SDKs:', 'iphoneos -arch arm64', 'iphonesimulator', 'macosx']
+        let write_items = ['SDKs:', 'iphoneos -arch arm64', 'iphonesimulator', 'macosx']
         call extend(write_items, ['', 'Build Configurations:'])
         call extend(write_items, s:buildConfigs)
 
