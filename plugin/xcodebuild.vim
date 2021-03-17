@@ -4,19 +4,6 @@
 " License: Vim license
 " Version .45
 
-
-" Build current target
-nn <leader>xb :call g:XCB_Build()<cr> 
-
-" Clean current target
-nn <leader>xk :call g:XCB_Clean()<cr> 
-
-" Show build command 
-nn <leader>xi :call g:XCB_BuildCommandInfo()<cr> 
-
-" Generate compile_commands
-nn <leader>xc :call g:XCB_GenerateCompileCommandsIfNeeded()<cr>:CocRestart<cr>
-
 let s:projects = []
 let s:project = '' 
 let s:targets = []
@@ -30,9 +17,7 @@ let s:sdk = ''
 let s:noProjectError = 'Missing .xcodeproj'
 let s:xcodeproj_info_file = '.xcodeproj_info'
 
-autocmd BufWritePost .xcodeproj_info call g:XCB_UpdateXCConfig()
-
-fun s:init()
+fun g:XCB_Init()
     call g:XCB_GenerateBuildInfoIfNeeded()
 
     if s:projectIsValid()	
@@ -49,6 +34,7 @@ fun s:init()
                     \%f:%l:\ warning:\ %m
 
         call g:XCB_UpdateXCConfig()
+        call s:setKeysAndAutocmds()
     endif
 endf
 
@@ -59,6 +45,21 @@ fun s:projectIsValid()
     return 0
 endf
 
+fun s:setKeysAndAutocmds() 
+    " Build current target
+    nn <leader>xx :call g:XCB_Build()<cr> 
+    " Clean current target
+    nn <leader>xk :call g:XCB_Clean()<cr> 
+    " Show build command 
+    nn <leader>xi :call g:XCB_BuildCommandInfo()<cr> 
+    " Generate compile_commands
+    nn <leader>xc :call g:XCB_GenerateCompileCommandsIfNeeded()<cr>:CocRestart<cr>
+    " Open xcode with current project
+    nn <space>x :wa<cr>:call g:XCB_OpenXCode()<cr>
+
+    autocmd BufWritePost .xcodeproj_info call g:XCB_UpdateXCConfig()
+endf
+
 fun g:XCB_GenerateBuildInfoIfNeeded()
     let s:project = s:findProjectFileName()
     let has_info_file = filereadable(getcwd()."/".s:xcodeproj_info_file)
@@ -67,7 +68,7 @@ fun g:XCB_GenerateBuildInfoIfNeeded()
         return 
     endif
 
-    " Need xcode build info.
+    " Found xcodeproj in current dir, add xcode build info file.
     if !has_info_file
         call system("touch ".s:xcodeproj_info_file)
     endif
@@ -153,11 +154,11 @@ fun s:XcodeCommandWithTarget(target)
     if(!empty(s:buildConfig))
         let cmd .= " -configuration " . s:buildConfig
     endif
-    if (!empty(s:project))
-        let cmd .= " -project " . s:project
-    endif
     if(!empty(s:scheme))
         let cmd .= " -scheme " . s:scheme
+    endif
+    if (!empty(s:project))
+        let cmd .= " -project " . s:project
     endif
     return cmd
 endf
@@ -167,7 +168,7 @@ fun g:XCB_Build()
         echoerr s:noProjectError
         return
     endif
-    call g:XCB_AsyncRunBuildCommand(s:XcodeCommandWithTarget(s:target) . ' build')
+    call s:asyncRunBuildCommand(s:XcodeCommandWithTarget(s:target) . ' build')
 endf
 
 fun g:XCB_Clean()
@@ -175,7 +176,7 @@ fun g:XCB_Clean()
         echoerr s:noProjectError
         return
     endif
-    call g:XCB_AsyncRunBuildCommand(s:XcodeCommandWithTarget(s:target) . ' clean')
+    call s:asyncRunBuildCommand(s:XcodeCommandWithTarget(s:target) . ' clean')
 endf
 
 fun g:XCB_BuildCommandInfo()
@@ -204,12 +205,12 @@ fun g:XCB_GenerateCompileCommandsIfNeeded()
     end
 endf
 
-fun g:XCB_RunBuildCommand(cmd)
-    exec "!" . a:cmd 
-endf
-
-fun g:XCB_AsyncRunBuildCommand(cmd)
+fun s:asyncRunBuildCommand(cmd)
     exec "AsyncRun " . a:cmd 
 endf
 
-call s:init()
+fun g:XCB_OpenXCode()
+    call system("open ". s:project)
+endf
+
+call g:XCB_Init()
