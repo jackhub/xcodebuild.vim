@@ -12,10 +12,12 @@ let s:buildConfigs = []
 let s:buildConfig = ''
 let s:schemes = []
 let s:scheme = ''
+let s:destinations = []
+let s:destination = ''
 let s:sdks = []
 let s:sdk = ''
 let s:noProjectError = 'Missing .xcodeproj'
-let s:xcodeproj_info_file = '.xcodeproj_info'
+let s:xcodeproj_info_file = '.xcm'
 
 fun g:XCB_Init()
     call g:XCB_GenerateBuildInfoIfNeeded()
@@ -57,7 +59,7 @@ fun s:setKeysAndAutocmds()
     " Open xcode with current project
     nn <space>x :wa<cr>:call g:XCB_OpenXCode()<cr>
 
-    autocmd BufWritePost .xcodeproj_info call g:XCB_UpdateXCConfig()
+    autocmd BufWritePost .xcm call g:XCB_UpdateXCConfig()
 endf
 
 fun g:XCB_GenerateBuildInfoIfNeeded()
@@ -103,7 +105,9 @@ fun g:XCB_GenerateBuildInfoIfNeeded()
         let s:targets[0] = '* '.s:targets[0]
         let s:schemes[0] = '* '.s:schemes[0]
 
-        let write_items = ['SDKs:', 'iphoneos -arch arm64', 'iphonesimulator', 'macosx']
+        let write_items = ['Destinations:', '"platform=iOS,name=jack’s iPhone"', '"platform=iOS Simulator,name=iPhone 12"', '',
+                    \ 'SDKs:', 'iphoneos', 'iphonesimulator', 'macosx']
+
         call extend(write_items, ['', 'Build Configurations:'])
         call extend(write_items, s:buildConfigs)
 
@@ -123,7 +127,9 @@ fun g:XCB_UpdateXCConfig()
     let configTypeEx = '[a-zA-Z ]*:'
     let typeSettingEx = '^* .*'
 
-    let configVarToTitleDict = {'Projects:' : s:projects, 'SDKs:' : s:sdks, 'Build Configurations:' : s:buildConfigs, 'Targets:' : s:targets, 'Schemes:' : s:schemes}
+    let configVarToTitleDict = {'Projects:' : s:projects, 'SDKs:' : s:sdks, 'Build Configurations:' : s:buildConfigs,
+                \ 'Targets:' : s:targets, 'Schemes:' : s:schemes}
+
     for line in outputList 
         if match(line, configTypeEx) == 0
             let typeTitle = matchstr(line, configTypeEx)
@@ -134,6 +140,8 @@ fun g:XCB_UpdateXCConfig()
                     let s:project = typeSetting[2:]
                 elseif typeTitle == 'SDKs:'
                     let s:sdk = typeSetting[2:]
+                elseif typeTitle == 'Destinations:'
+                    let s:destination = typeSetting[2:]
                 elseif typeTitle == 'Build Configurations:'
                     let s:buildConfig  = typeSetting[2:]
                 elseif typeTitle == 'Targets:'
@@ -150,6 +158,9 @@ fun s:XcodeCommandWithTarget(target)
     let cmd = "xcodebuild"
     if(!empty(s:sdk))
         let cmd .= " -sdk " . s:sdk
+    endif
+    if(!empty(s:destination))
+        let cmd .= " -destination " . s:destination
     endif
     if(!empty(s:buildConfig))
         let cmd .= " -configuration " . s:buildConfig
