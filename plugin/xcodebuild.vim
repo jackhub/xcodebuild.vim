@@ -49,15 +49,18 @@ endf
 
 fun s:setKeysAndAutocmds() 
     " Build current target
-    nn <leader>xx :call g:XCB_Build()<cr> 
+    nn <m-b> :wa!<cr>:call g:XCB_Build()<cr> 
     " Clean current target
-    nn <leader>xk :call g:XCB_Clean()<cr> 
+    nn <m-c> :call g:XCB_Clean()<cr> 
+    " Open xcode with current project
+    nn <space>x :wa!<cr>:call g:XCB_OpenXCode()<cr>
+
     " Show build command 
     nn <leader>xi :call g:XCB_BuildCommandInfo()<cr> 
+    " Open config file.
+    nn <leader>xo :e .xcm<cr>
     " Generate compile_commands
     nn <leader>xc :call g:XCB_GenerateCompileCommandsIfNeeded()<cr>:CocRestart<cr>
-    " Open xcode with current project
-    nn <space>x :wa<cr>:call g:XCB_OpenXCode()<cr>
 
     autocmd BufWritePost .xcm call g:XCB_UpdateXCConfig()
 endf
